@@ -17,39 +17,79 @@ def predict(data, test_data, k):
     df_test = pd.read_csv(test_data)
     df_test = df_test.drop(['screen_height', 'screen_width'], axis=1)
 
-    X_train_x = df[['left_iris_x', 'right_iris_x']]
+    # Calculate direction vectors and midpoints for both eyes
+    df['eye_center_x'] = (df['left_iris_x'] + df['right_iris_x']) / 2
+    df['eye_center_y'] = (df['left_iris_y'] + df['right_iris_y']) / 2
+    
+    df_test['eye_center_x'] = (df_test['left_iris_x'] + df_test['right_iris_x']) / 2
+    df_test['eye_center_y'] = (df_test['left_iris_y'] + df_test['right_iris_y']) / 2
+
+    # Calculate eye movement vectors
+    df['left_direction_x'] = df['left_iris_x'].diff()
+    df['left_direction_y'] = df['left_iris_y'].diff()
+    df['right_direction_x'] = df['right_iris_x'].diff()
+    df['right_direction_y'] = df['right_iris_y'].diff()
+    
+    df_test['left_direction_x'] = df_test['left_iris_x'].diff()
+    df_test['left_direction_y'] = df_test['left_iris_y'].diff()
+    df_test['right_direction_x'] = df_test['right_iris_x'].diff()
+    df_test['right_direction_y'] = df_test['right_iris_y'].diff()
+    
+    # Calculate inter-eye distance for scale normalization
+    df['eye_distance'] = np.sqrt((df['right_iris_x'] - df['left_iris_x'])**2 + 
+                                (df['right_iris_y'] - df['left_iris_y'])**2)
+    df_test['eye_distance'] = np.sqrt((df_test['right_iris_x'] - df_test['left_iris_x'])**2 + 
+                                     (df_test['right_iris_y'] - df_test['left_iris_y'])**2)
+    
+    # Fill NaN values with 0 for the first row
+    df.fillna(0, inplace=True)
+    df_test.fillna(0, inplace=True)
+
+    # Enhanced feature set for X coordinate prediction
+    X_train_x = df[['eye_center_x', 'left_direction_x', 'right_direction_x', 'eye_distance']]
     y_train_x = df['point_x']
 
     sc = StandardScaler()
     X_train_x = sc.fit_transform(X_train_x)
 
-    X_test_x = df_test[['left_iris_x', 'right_iris_x']]
+    X_test_x = df_test[['eye_center_x', 'left_direction_x', 'right_direction_x', 'eye_distance']]
     y_test_x = df_test['point_x']
 
     sc = StandardScaler()
     X_test_x = sc.fit_transform(X_test_x)
 
+    # Increased polynomial degree and adjusted regularization for better sensitivity
     model = make_pipeline(PolynomialFeatures(
-        2), linear_model.LinearRegression())
+        3), linear_model.Ridge(alpha=0.3))
     model.fit(X_train_x, y_train_x)
     y_pred_x = model.predict(X_test_x)
 
-    X_train_y = df[['left_iris_y', 'right_iris_y']]
+    # Enhanced feature set for Y coordinate prediction
+    X_train_y = df[['eye_center_y', 'left_direction_y', 'right_direction_y', 'eye_distance']]
     y_train_y = df['point_y']
 
     sc = StandardScaler()
     X_train_y = sc.fit_transform(X_train_y)
 
-    X_test_y = df_test[['left_iris_y', 'right_iris_y']]
+    X_test_y = df_test[['eye_center_y', 'left_direction_y', 'right_direction_y', 'eye_distance']]
     y_test_y = df_test['point_y']
 
     sc = StandardScaler()
     X_test_y = sc.fit_transform(X_test_y)
 
+    # Increased polynomial degree and adjusted regularization for better sensitivity
     model = make_pipeline(PolynomialFeatures(
-        2), linear_model.LinearRegression())
+        3), linear_model.Ridge(alpha=0.3))
     model.fit(X_train_y, y_train_y)
     y_pred_y = model.predict(X_test_y)
+
+    # Apply coordinate mapping correction
+    VIDEO_WIDTH = 640  # Standard webcam width
+    VIDEO_HEIGHT = 480  # Standard webcam height
+    
+    # Map predictions from webcam space to screen space
+    y_pred_x = y_pred_x * (VIDEO_WIDTH / np.max(y_pred_x))
+    y_pred_y = y_pred_y * (VIDEO_HEIGHT / np.max(y_pred_y))
 
     data = np.array([y_pred_x, y_pred_y]).T
     model = KMeans(n_clusters=k, n_init='auto', init='k-means++')
@@ -155,6 +195,34 @@ def train_model(session_id):
     raw_dataset = pd.read_csv(dataset_train_path)
     session_dataset = pd.read_csv(dataset_session_path)
 
+    # Calculate eye centers and movement vectors
+    raw_dataset['eye_center_x'] = (raw_dataset['left_iris_x'] + raw_dataset['right_iris_x']) / 2
+    raw_dataset['eye_center_y'] = (raw_dataset['left_iris_y'] + raw_dataset['right_iris_y']) / 2
+    
+    session_dataset['eye_center_x'] = (session_dataset['left_iris_x'] + session_dataset['right_iris_x']) / 2
+    session_dataset['eye_center_y'] = (session_dataset['left_iris_y'] + session_dataset['right_iris_y']) / 2
+
+    # Calculate direction vectors
+    raw_dataset['left_direction_x'] = raw_dataset['left_iris_x'].diff()
+    raw_dataset['left_direction_y'] = raw_dataset['left_iris_y'].diff()
+    raw_dataset['right_direction_x'] = raw_dataset['right_iris_x'].diff()
+    raw_dataset['right_direction_y'] = raw_dataset['right_iris_y'].diff()
+    
+    session_dataset['left_direction_x'] = session_dataset['left_iris_x'].diff()
+    session_dataset['left_direction_y'] = session_dataset['left_iris_y'].diff()
+    session_dataset['right_direction_x'] = session_dataset['right_iris_x'].diff()
+    session_dataset['right_direction_y'] = session_dataset['right_iris_y'].diff()
+    
+    # Calculate inter-eye distance for scale normalization
+    raw_dataset['eye_distance'] = np.sqrt((raw_dataset['right_iris_x'] - raw_dataset['left_iris_x'])**2 + 
+                                        (raw_dataset['right_iris_y'] - raw_dataset['left_iris_y'])**2)
+    session_dataset['eye_distance'] = np.sqrt((session_dataset['right_iris_x'] - session_dataset['left_iris_x'])**2 + 
+                                            (session_dataset['right_iris_y'] - session_dataset['left_iris_y'])**2)
+    
+    # Fill NaN values with 0 for the first row
+    raw_dataset.fillna(0, inplace=True)
+    session_dataset.fillna(0, inplace=True)
+
     train_stats = raw_dataset.describe()
     train_stats = train_stats.transpose()
 
@@ -166,17 +234,40 @@ def train_model(session_id):
 
     Y1 = dataset_t.mouse_x
     Y2 = dataset_t.mouse_y
-    # print('Y1 is the mouse_x column ->', Y1)
-    # print('Y2 is the mouse_y column ->', Y2)
 
-    MODEL_X = model_for_mouse_x(X, Y1)
-    MODEL_Y = model_for_mouse_y(X, Y2)
+    # Create polynomial features for better direction sensitivity
+    poly = PolynomialFeatures(degree=3, include_bias=False)
+    X_poly = poly.fit_transform(X)
+    
+    # Use Ridge regression with adjusted alpha for better sensitivity
+    MODEL_X = linear_model.Ridge(alpha=0.3)
+    MODEL_Y = linear_model.Ridge(alpha=0.3)
+    
+    MODEL_X.fit(X_poly, Y1)
+    MODEL_Y.fit(X_poly, Y2)
 
-    GAZE_X = MODEL_X.predict(dataset_s)
-    GAZE_Y = MODEL_Y.predict(dataset_s)
+    # Transform session data
+    X_session_poly = poly.transform(dataset_s)
+    
+    GAZE_X = MODEL_X.predict(X_session_poly)
+    GAZE_Y = MODEL_Y.predict(X_session_poly)
 
-    GAZE_X = np.abs(GAZE_X)
-    GAZE_Y = np.abs(GAZE_Y)
+    # Apply coordinate mapping correction
+    VIDEO_WIDTH = 640  # Standard webcam width
+    VIDEO_HEIGHT = 480  # Standard webcam height
+    
+    # Map predictions from webcam space to screen space
+    GAZE_X = GAZE_X * (VIDEO_WIDTH / np.max(GAZE_X))
+    GAZE_Y = GAZE_Y * (VIDEO_HEIGHT / np.max(GAZE_Y))
+
+    # Ensure predictions are within screen bounds
+    GAZE_X = np.clip(GAZE_X, 0, VIDEO_WIDTH)
+    GAZE_Y = np.clip(GAZE_Y, 0, VIDEO_HEIGHT)
+    
+    # Apply exponential moving average for smoother predictions with shorter window
+    window = 2  # Reduced from 3 for faster response
+    GAZE_X = pd.Series(GAZE_X).ewm(span=window).mean().values
+    GAZE_Y = pd.Series(GAZE_Y).ewm(span=window).mean().values
 
     return {"x": GAZE_X, "y": GAZE_Y}
 
